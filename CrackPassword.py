@@ -63,6 +63,11 @@ class CrackPassword(QThread):
 
     def run(self):
         self.stop_flag = False
+        # 验证consumer_number参数
+        if self.consumer_number < 1:
+            self.consuming_passwords.emit(f"错误：进程数必须至少为1，当前值为{self.consumer_number}")
+            return
+            
         # 定义一个队列
         queue = Manager().Queue()
         emit_queue = Manager().Queue()
@@ -80,8 +85,12 @@ class CrackPassword(QThread):
         self.producer.producing_password_num.connect(self.on_producing_password_num, type=Qt.DirectConnection)
         self.producer.start()
         # 定义若干消费者并运行
-        self.pool = Pool(processes=self.consumer_number)
-        result = self.pool.apply_async(extract_function, args=(queue, self.zipfile_path, self.extract_path, emit_queue))
+        try:
+            self.pool = Pool(processes=self.consumer_number)
+            result = self.pool.apply_async(extract_function, args=(queue, self.zipfile_path, self.extract_path, emit_queue))
+        except ValueError as e:
+            self.consuming_passwords.emit(f"创建进程池失败：{str(e)}")
+            return
         while True:
             if self.stop_flag:
                 self.producer.stop()
