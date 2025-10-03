@@ -17,20 +17,35 @@ from PyQt5.QtGui import QFont, QIcon, QPalette, QColor, QPixmap, QPainter, QBrus
 from ExportDict import ExportDict
 from CrackPassword import CrackPassword
 
+# 统一暗色主题下的组框样式（标题与边框融为一体）
+UNIFIED_GROUPBOX_STYLE_DARK = """
+    QGroupBox {
+        font-weight: bold;
+        font-size: 24px;    /* 提升区域标题字号 */
+        color: #dddddd;
+        border: 1px solid #666666;
+        border-radius: 6px;
+        margin-top: 12px;   /* 与标题融合需要顶部留白 */
+        padding-top: 14px;  /* 与标题融合需要内边距 */
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        left: 10px;
+        padding: 0 6px;
+    }
+"""
 
-class ModernCard(QFrame):
-    """ui卡片组件"""
+
+class ModernCard(QGroupBox):
+    """统一风格的区域容器（标题与边框一体）"""
     def __init__(self, title="", parent=None):
-        super().__init__(parent)
-        self.setFrameStyle(QFrame.StyledPanel)
-        
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(20, 15, 20, 15)
+        super().__init__(title, parent)
+        self.setStyleSheet(UNIFIED_GROUPBOX_STYLE_DARK)
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(12, 10, 12, 12)
         self.layout.setSpacing(10)
-        
-        if title:
-            self.title_label = QLabel(title)
-            self.layout.addWidget(self.title_label)
+        self.setLayout(self.layout)
 
 
 class ModernButton(QPushButton):
@@ -79,8 +94,8 @@ class ModernMainWindow(QMainWindow):
     EXPORT_COMPLETED = ExportDict.EXPORT_COMPLETED
     FILE_FILTER_TXT = "文本文件 (*.txt);;全部文件 (*)"
     FILE_FILTER_ZIP = "压缩文件 (*.zip;*.rar;*.7z);;ZIP压缩文件 (*.zip);;RAR压缩文件 (*.rar);;7Z压缩文件 (*.7z);;全部文件 (*)"
-    START_CRACK = "开始破解"
-    STOP_CRACK = "停止破解"
+    START_CRACK = "开始遍历"
+    STOP_CRACK = "停止遍历"
     START_EXPORT = "开始导出"
     STOP_EXPORT = "停止导出"
 
@@ -89,12 +104,6 @@ class ModernMainWindow(QMainWindow):
         self.setWindowTitle("压缩文件密码破解器")
         self.setMinimumSize(900, 700)
         self.resize(1200, 800)
-        
-        # 设置窗口图标
-        try:
-            self.setWindowIcon(QIcon("res/icon.ico"))
-        except:
-            pass
         
         # 初始化变量
         self.export_dict_thread = None
@@ -128,24 +137,25 @@ class ModernMainWindow(QMainWindow):
         main_layout.setContentsMargins(20, 20, 20, 10)
         main_layout.setSpacing(20)
         
-        # 标题区域
-        self.create_header(main_layout)
-        
-        # 创建分割器
-        splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
-        
-        # 左侧面板
+        # 顶部行：字典配置 + 密码破解（部件向上对齐）
+        top_widget = QWidget()
+        top_layout = QHBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(10)
+
         left_panel = self.create_left_panel()
-        splitter.addWidget(left_panel)
-        
-        # 右侧面板
         right_panel = self.create_right_panel()
-        splitter.addWidget(right_panel)
-        
-        # 设置分割器比例
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
+        # 设置面板大小策略，使其按内容高度并向上对齐
+        left_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        top_layout.addWidget(left_panel, 1, Qt.AlignTop)
+        top_layout.addWidget(right_panel, 1, Qt.AlignTop)
+
+        main_layout.addWidget(top_widget)
+
+        # 底部行：运行日志
+        log_widget = self.create_log_panel()
+        main_layout.addWidget(log_widget)
         
         # 状态栏
         self.statusbar = QStatusBar()
@@ -153,65 +163,8 @@ class ModernMainWindow(QMainWindow):
         self.statusbar.showMessage("就绪")
 
     def create_header(self, parent_layout):
-        """创建标题区域"""
-        header_card = ModernCard()
-        header_layout = QHBoxLayout()
-        header_card.layout.addLayout(header_layout)
-        
-        # 标题
-        title_label = QLabel("🔐 压缩文件密码破解器")
-        title_label.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: bold;
-                color: #2196F3;
-                margin: 10px 0;
-            }
-        """)
-        header_layout.addWidget(title_label)
-        
-        header_layout.addStretch()
-        
-        # 系统配置区域
-        config_layout = QHBoxLayout()
-        
-        # CPU核心数配置
-        cpu_label = QLabel("CPU核心:")
-        cpu_label.setStyleSheet("font-weight: bold; color: #666;")
-        config_layout.addWidget(cpu_label)
-        
-        self.core_num = QLCDNumber(2)
-        self.core_num.setFixedSize(60, 30)
-        self.core_num.display(cpu_count())  # 设置初始值
-        config_layout.addWidget(self.core_num)
-        
-        self.cpu_slider = ModernSlider()
-        self.cpu_slider.setMinimum(1)
-        self.cpu_slider.setMaximum(cpu_count())
-        self.cpu_slider.setValue(cpu_count())
-        self.cpu_slider.setFixedWidth(120)
-        config_layout.addWidget(self.cpu_slider)
-        
-        # 批量处理数配置
-        batch_label = QLabel("批量处理:")
-        batch_label.setStyleSheet("font-weight: bold; color: #666; margin-left: 20px;")
-        config_layout.addWidget(batch_label)
-        
-        self.batch_size = QLCDNumber(5)
-        self.batch_size.setFixedSize(80, 30)
-        self.batch_size.display(20000)
-        config_layout.addWidget(self.batch_size)
-        
-        self.batch_dial = QSlider(Qt.Horizontal)
-        self.batch_dial.setMinimum(1)
-        self.batch_dial.setMaximum(20000)
-        self.batch_dial.setValue(20000)
-        self.batch_dial.setFixedWidth(120)
-        self.batch_dial.setStyleSheet(self.cpu_slider.styleSheet())
-        config_layout.addWidget(self.batch_dial)
-        
-        header_layout.addLayout(config_layout)
-        parent_layout.addWidget(header_card)
+        """已弃用：旧的标题区域（保留以兼容，但不再使用）"""
+        pass
 
     def create_left_panel(self):
         """创建左侧面板"""
@@ -220,34 +173,36 @@ class ModernMainWindow(QMainWindow):
         left_layout.setContentsMargins(0, 0, 10, 0)
         left_layout.setSpacing(15)
         
-        # 字典配置区域
-        dict_card = ModernCard("📚 字典配置")
+        # 字典配置区域（合并为单页）
+        dict_card = ModernCard("字典配置")
         
-        # 字典源选择
-        self.dict_source = QTabWidget()
-        dict_card.layout.addWidget(self.dict_source)
-        
-        # 内置字典标签页
-        internal_tab = QWidget()
-        internal_layout = QVBoxLayout(internal_tab)
+        # 模式选择（自动 / 仅遍历 / 仅字典）
+        mode_group = QGroupBox("模式选择")
+        mode_group.setStyleSheet(UNIFIED_GROUPBOX_STYLE_DARK)
+        mode_layout = QHBoxLayout(mode_group)
+
+        self.radio_mode_auto = QRadioButton("自动（优先使用外部字典）")
+        self.radio_mode_bruteforce = QRadioButton("仅遍历")
+        self.radio_mode_dict = QRadioButton("仅字典")
+        self.radio_mode_auto.setChecked(True)
+
+        self.mode_buttons = QButtonGroup(self)
+        self.mode_buttons.addButton(self.radio_mode_auto, 0)
+        self.mode_buttons.addButton(self.radio_mode_bruteforce, 1)
+        self.mode_buttons.addButton(self.radio_mode_dict, 2)
+
+        mode_layout.addWidget(self.radio_mode_auto)
+        mode_layout.addWidget(self.radio_mode_bruteforce)
+        mode_layout.addWidget(self.radio_mode_dict)
+        dict_card.layout.addWidget(mode_group)
+
+        # 字符集与位数等内置遍历配置（原“内置字典”页内容）
+        internal_layout = QVBoxLayout()
         internal_layout.setSpacing(15)
         
         # 字符集选择
         charset_group = QGroupBox("字符集选择")
-        charset_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-        """)
+        charset_group.setStyleSheet(UNIFIED_GROUPBOX_STYLE_DARK)
         charset_layout = QGridLayout(charset_group)
         
         self.checkBox_num = QCheckBox("数字 (0-9)")
@@ -265,7 +220,7 @@ class ModernMainWindow(QMainWindow):
         
         # 位数设置
         digit_group = QGroupBox("密码位数")
-        digit_group.setStyleSheet(charset_group.styleSheet())
+        digit_group.setStyleSheet(UNIFIED_GROUPBOX_STYLE_DARK)
         digit_layout = QHBoxLayout(digit_group)
         
         digit_layout.addWidget(QLabel("最小位数:"))
@@ -286,37 +241,20 @@ class ModernMainWindow(QMainWindow):
         
         # 导出字典区域
         export_group = QGroupBox("字典导出")
-        export_group.setStyleSheet(charset_group.styleSheet())
+        export_group.setStyleSheet(UNIFIED_GROUPBOX_STYLE_DARK)
         export_layout = QVBoxLayout(export_group)
         
-        path_layout = QHBoxLayout()
-        self.export_path = QLineEdit()
-        self.export_path.setPlaceholderText("选择字典导出路径...")
-        path_layout.addWidget(self.export_path)
-        
-        self.button_export_path = ModernButton("浏览", "secondary")
-        self.button_export_path.setFixedWidth(80)
-        path_layout.addWidget(self.button_export_path)
-        export_layout.addLayout(path_layout)
-        
+        # 只保留导出按钮
         export_control_layout = QHBoxLayout()
-        self.button_export = ModernButton("开始导出", "primary")
+        self.button_export = ModernButton("字典导出", "primary")
         export_control_layout.addWidget(self.button_export)
-        
-        self.progress_export = ModernProgressBar()
-        export_control_layout.addWidget(self.progress_export)
         export_layout.addLayout(export_control_layout)
         
         internal_layout.addWidget(export_group)
         
-        self.dict_source.addTab(internal_tab, "内置字典")
-        
-        # 外部字典标签页
-        external_tab = QWidget()
-        external_layout = QVBoxLayout(external_tab)
-        
+        # 自定义字典文件（迁移到同一页，不分页）
         external_group = QGroupBox("自定义字典文件")
-        external_group.setStyleSheet(charset_group.styleSheet())
+        external_group.setStyleSheet(UNIFIED_GROUPBOX_STYLE_DARK)
         external_group_layout = QVBoxLayout(external_group)
         
         dict_path_layout = QHBoxLayout()
@@ -329,10 +267,10 @@ class ModernMainWindow(QMainWindow):
         dict_path_layout.addWidget(self.button_dict_path)
         
         external_group_layout.addLayout(dict_path_layout)
-        external_layout.addWidget(external_group)
-        external_layout.addStretch()
         
-        self.dict_source.addTab(external_tab, "外部字典")
+        # 将内置配置与外部字典选择依次加入字典卡片
+        dict_card.layout.addLayout(internal_layout)
+        dict_card.layout.addWidget(external_group)
         
         left_layout.addWidget(dict_card)
         left_layout.addStretch()
@@ -340,109 +278,105 @@ class ModernMainWindow(QMainWindow):
         return left_widget
 
     def create_right_panel(self):
-        """创建右侧面板"""
+        """创建右侧面板（仅包含密码破解区域）"""
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(10, 0, 0, 0)
         right_layout.setSpacing(15)
+
+        # 密码遍历配置区域
+        crack_card = ModernCard("遍历配置")
+
+        # 系统配置（从旧标题区域迁移到破解卡片顶部）
+        config_layout = QHBoxLayout()
+        cpu_label = QLabel("CPU核心:")
+        config_layout.addWidget(cpu_label)
+
+        self.core_num = QLCDNumber(2)
+        self.core_num.setFixedSize(60, 30)
+        self.core_num.display(cpu_count())
+        config_layout.addWidget(self.core_num)
+
+        self.cpu_slider = ModernSlider()
+        self.cpu_slider.setMinimum(1)
+        self.cpu_slider.setMaximum(cpu_count())
+        self.cpu_slider.setValue(cpu_count())
+        self.cpu_slider.setFixedWidth(120)
+        config_layout.addWidget(self.cpu_slider)
+
+        batch_label = QLabel("批量处理:")
+        config_layout.addWidget(batch_label)
+
+        self.batch_size = QLCDNumber(5)
+        self.batch_size.setFixedSize(80, 30)
+        self.batch_size.display(20000)
+        config_layout.addWidget(self.batch_size)
+
+        self.batch_dial = QSlider(Qt.Horizontal)
+        self.batch_dial.setMinimum(1)
+        self.batch_dial.setMaximum(20000)
+        self.batch_dial.setValue(20000)
+        self.batch_dial.setFixedWidth(120)
+        config_layout.addWidget(self.batch_dial)
+
+        crack_card.layout.addLayout(config_layout)
         
-        # 破解配置区域
-        crack_card = ModernCard("🔓 密码破解")
-        
-        # 文件选择区域
-        file_group = QGroupBox("文件配置")
-        file_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-        """)
-        file_layout = QVBoxLayout(file_group)
-        
+        # 文件选择区域（直接放入“密码遍历”卡片，不再嵌套分组）
         # 压缩文件选择
         zip_layout = QHBoxLayout()
         zip_layout.addWidget(QLabel("压缩文件:"))
         self.zipfile_path = QLineEdit()
-        self.zipfile_path.setPlaceholderText("选择要破解的压缩文件...")
+        self.zipfile_path.setPlaceholderText("选择要遍历的压缩文件...")
         zip_layout.addWidget(self.zipfile_path)
-        
+
         self.button_zipfile_path = ModernButton("浏览", "secondary")
         self.button_zipfile_path.setFixedWidth(80)
         zip_layout.addWidget(self.button_zipfile_path)
-        file_layout.addLayout(zip_layout)
-        
+        crack_card.layout.addLayout(zip_layout)
+
         # 解压路径选择
         extract_layout = QHBoxLayout()
         extract_layout.addWidget(QLabel("解压路径:"))
         self.extract_path = QLineEdit()
         self.extract_path.setPlaceholderText("选择解压输出路径...")
         extract_layout.addWidget(self.extract_path)
-        
+
         self.button_extract_path = ModernButton("浏览", "secondary")
         self.button_extract_path.setFixedWidth(80)
         extract_layout.addWidget(self.button_extract_path)
-        file_layout.addLayout(extract_layout)
-        
-        crack_card.layout.addWidget(file_group)
-        
-        # 破解控制区域
-        control_group = QGroupBox("破解控制")
-        control_group.setStyleSheet(file_group.styleSheet())
-        control_layout = QVBoxLayout(control_group)
-        
-        # 破解按钮和进度
-        crack_control_layout = QHBoxLayout()
-        self.button_crack = ModernButton("开始破解", "primary")
-        self.button_crack.setFixedWidth(120)
-        crack_control_layout.addWidget(self.button_crack)
-        
-        self.progress_crack = ModernProgressBar()
-        crack_control_layout.addWidget(self.progress_crack)
-        control_layout.addLayout(crack_control_layout)
-        
-        # 结果显示
+        crack_card.layout.addLayout(extract_layout)
+
+        # 结果显示（并入卡片底部）
         result_layout = QHBoxLayout()
-        result_layout.addWidget(QLabel("破解结果:"))
+        result_layout.addWidget(QLabel("遍历结果:"))
         self.password = QLineEdit()
         self.password.setReadOnly(True)
         self.password.setPlaceholderText("密码将在这里显示...")
         result_layout.addWidget(self.password)
-        control_layout.addLayout(result_layout)
-        
-        crack_card.layout.addWidget(control_group)
-        
-        # 日志区域
+        crack_card.layout.addLayout(result_layout)
+
+        # 将密码遍历卡片加入右侧面板
+        right_layout.addWidget(crack_card)
+
+        # 操作按钮占用整行，位于“密码遍历”列布局下方
+        self.button_crack = ModernButton(self.START_CRACK, "primary")
+        self.button_crack.setMinimumHeight(48)
+        self.button_crack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        right_layout.addWidget(self.button_crack)
+
+        # 进度条放置在按钮下方，占用一行
+        self.progress_crack = ModernProgressBar()
+        right_layout.addWidget(self.progress_crack)
+        return right_widget
+
+    def create_log_panel(self):
+        """创建底部日志面板（单独一行）"""
         log_card = ModernCard("📋 运行日志")
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        # 扩展日志区域
         self.log_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         log_card.layout.addWidget(self.log_text)
-
-        # 使用垂直分割器，提高日志区可用空间
-        splitter = QSplitter(Qt.Vertical)
-        splitter.addWidget(crack_card)
-        splitter.addWidget(log_card)
-        splitter.setSizes([400, 600])
-        right_layout.addWidget(splitter)
-        
-        # 退出按钮
-        exit_layout = QHBoxLayout()
-        exit_layout.addStretch()
-        self.button_close = ModernButton("退出程序", "danger")
-        self.button_close.setFixedWidth(120)
-        exit_layout.addWidget(self.button_close)
-        right_layout.addLayout(exit_layout)
-        
-        return right_widget
+        return log_card
 
     def connect_signals(self):
         """连接信号和槽"""
@@ -459,7 +393,6 @@ class ModernMainWindow(QMainWindow):
         self.checkBox_symbols.clicked.connect(self.validate_bool)
         
         # 文件选择按钮
-        self.button_export_path.clicked.connect(self.select_export_path)
         self.button_dict_path.clicked.connect(self.select_dict_path)
         self.button_zipfile_path.clicked.connect(self.select_zipfile_path)
         self.button_extract_path.clicked.connect(self.select_extract_path)
@@ -467,10 +400,8 @@ class ModernMainWindow(QMainWindow):
         # 功能按钮
         self.button_export.clicked.connect(self.on_export_dict)
         self.button_crack.clicked.connect(self.on_crack_password)
-        self.button_close.clicked.connect(self.close)
         
         # 进度条变化
-        self.progress_export.valueChanged.connect(self.on_export_progress_changed)
         self.progress_crack.valueChanged.connect(self.on_crack_progress_changed)
 
     def log_message(self, message):
@@ -514,10 +445,10 @@ class ModernMainWindow(QMainWindow):
 
     def get_export_path(self) -> str:
         """获取导出路径"""
-        export_path = self.export_path.text().strip()
-        if not export_path:
-            QMessageBox().warning(self, self.WARNING, self.SELECT_EXPORT_PATH, QMessageBox.Ok)
-            return ""
+        export_path = "output\\字典导出"
+        # 确保目录存在
+        if not QDir(export_path).exists():
+            QDir().mkpath(export_path)
         return export_path
 
     def get_extract_path(self) -> str:
@@ -555,15 +486,7 @@ class ModernMainWindow(QMainWindow):
             return ""
         return dict_path
 
-    @pyqtSlot()
-    def select_export_path(self) -> str:
-        """选择导出路径"""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "选择字典导出路径", "", self.FILE_FILTER_TXT
-        )
-        if file_path:
-            self.export_path.setText(file_path)
-        return file_path
+
 
     @pyqtSlot()
     def on_export_dict(self):
@@ -571,19 +494,22 @@ class ModernMainWindow(QMainWindow):
         if self.export_dict_thread is None or self.export_dict_thread.isFinished():
             seed_selection = self.get_seed_selection()
             digit_range = self.get_range()
-            file_path = self.get_export_path()
-            if file_path and any(seed_selection):
+            export_dir = self.get_export_path()
+            if export_dir and any(seed_selection):
+                # 生成带时间戳的文件名
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                file_path = f"{export_dir}\\{timestamp}_字典导出.txt"
+                
                 self.export_dict_thread = ExportDict(
                     "export_dict", seed_selection, digit_range,
                     file_path, self.core_num.intValue(), self.batch_size.intValue()
                 )
-                self.progress_export.setMaximum(self.export_dict_thread.get_batch_count())
-                self.export_dict_thread.consuming_passwords_num.connect(self.on_consuming_passwords_num)
                 self.export_dict_thread.producing_password.connect(self.on_exporting_dict)
                 self.export_dict_thread.consuming_passwords.connect(self.on_exporting_dict)
                 self.export_dict_thread.start()
                 self.button_export.setText(self.STOP_EXPORT)
-                self.log_message("开始导出字典...")
+                self.log_message(f"开始导出字典到: {file_path}")
         else:
             self.export_dict_thread.stop()
             self.button_export.setText(self.START_EXPORT)
@@ -598,7 +524,7 @@ class ModernMainWindow(QMainWindow):
 
     @pyqtSlot(str)
     def on_cracking_passwords(self, passwords: str):
-        """破解密码状态更新"""
+        """遍历密码状态更新"""
         self.statusbar.showMessage(passwords)
         self.log_message(passwords)
         
@@ -606,42 +532,27 @@ class ModernMainWindow(QMainWindow):
             password = passwords[len(CrackPassword.CRACK_SUCCEED):]
             self.password.setText(password)
             self.progress_crack.setValue(self.progress_crack.maximum())
-            self.log_message(f"破解成功！密码是: {password}")
+            self.log_message(f"遍历成功！找到密码: {password}")
             QMessageBox().information(self, self.INFO, passwords, QMessageBox.Ok)
         elif CrackPassword.NO_PASSWORD in passwords:
             self.progress_crack.setValue(self.progress_crack.maximum())
             self.password.setText("空")
-            self.log_message("破解成功！密码为空")
+            self.log_message("遍历成功！密码为空")
             QMessageBox().information(self, self.INFO, CrackPassword.NO_PASSWORD, QMessageBox.Ok)
         elif CrackPassword.CRACK_FAILED in passwords:
             self.progress_crack.setValue(self.progress_crack.maximum())
             self.password.setText("")
-            self.log_message("破解失败，未找到密码")
+            self.log_message("遍历失败，未找到密码")
             QMessageBox().information(self, self.INFO, CrackPassword.CRACK_FAILED, QMessageBox.Ok)
 
     @pyqtSlot(int)
-    def on_consuming_passwords_num(self, passwords_num: int):
-        """消费密码数量更新"""
-        self.progress_export.setValue(passwords_num)
-
-    @pyqtSlot(int)
     def on_cracking_passwords_num(self, passwords_num: int):
-        """破解密码数量更新"""
+        """遍历密码数量更新"""
         self.progress_crack.setValue(passwords_num)
 
     @pyqtSlot(int)
-    def on_export_progress_changed(self, progress: int):
-        """导出进度变化"""
-        if progress == self.progress_export.maximum():
-            self.button_export.setText(self.START_EXPORT)
-            if self.export_dict_thread:
-                self.export_dict_thread.wait()
-                self.export_dict_thread = None
-            self.log_message("字典导出完成！")
-
-    @pyqtSlot(int)
     def on_crack_progress_changed(self, progress: int):
-        """破解进度变化"""
+        """遍历进度变化"""
         if progress == self.progress_crack.maximum():
             self.button_crack.setText(self.START_CRACK)
             if self.password_cracker:
@@ -678,23 +589,35 @@ class ModernMainWindow(QMainWindow):
 
     @pyqtSlot()
     def on_crack_password(self):
-        """开始破解密码"""
+        """开始遍历密码"""
         if self.password_cracker is None or self.password_cracker.isFinished():
             seed_selection = self.get_seed_selection()
             digit_range = self.get_range()
             consumer_number = self.core_num.intValue()
             batch_size = self.batch_size.intValue()
-            dict_source = self.dict_source.currentIndex()
+            # 根据模式选择决定字典来源
+            mode_id = self.mode_buttons.checkedId()  # 0: 自动, 1: 仅遍历, 2: 仅字典
+            dict_source = 0
+            dict_path = ""
+            if mode_id == 0:  # 自动（混合）：优先外部字典，否则按遍历
+                candidate_path = self.dict_path.text().strip()
+                if candidate_path and QFileInfo(candidate_path).exists():
+                    dict_source = 1
+                    dict_path = candidate_path
+                else:
+                    dict_source = 0
+                    dict_path = ""
+            elif mode_id == 1:  # 仅遍历
+                dict_source = 0
+                dict_path = ""
+            elif mode_id == 2:  # 仅字典
+                dict_source = 1
+                dict_path = self.get_dict_path()
+                if not dict_path:
+                    # 未选择外部字典则直接提示并退出
+                    return
             zipfile_path = self.get_zipfile_path()
             extract_path = self.get_extract_path()
-            
-            # 根据字典源类型获取字典路径
-            if dict_source == 0:  # 内置字典
-                dict_path = ""  # 内置字典不需要路径
-            else:  # 外部字典
-                dict_path = self.get_dict_path()
-                if not dict_path:  # 外部字典必须有路径
-                    return
             
             if zipfile_path and extract_path:
                 self.password_cracker = CrackPassword(
@@ -708,14 +631,20 @@ class ModernMainWindow(QMainWindow):
                 self.password_cracker.consuming_passwords.connect(self.on_cracking_passwords)
                 self.password_cracker.start()
                 self.button_crack.setText(self.STOP_CRACK)
-                if dict_source == 0:
-                    self.log_message("开始使用内置字典破解密码...")
+                if dict_source == 1:
+                    if mode_id == 0:
+                        self.log_message("自动模式：优先使用外部字典遍历密码...")
+                    else:
+                        self.log_message("开始使用外部字典遍历密码...")
                 else:
-                    self.log_message("开始使用外部字典破解密码...")
+                    if mode_id == 0:
+                        self.log_message("自动模式：未选择外部字典，改用字符集遍历...")
+                    else:
+                        self.log_message("开始使用字符集遍历密码...")
         else:
             self.password_cracker.stop()
             self.button_crack.setText(self.START_CRACK)
-            self.log_message("停止破解密码")
+            self.log_message("停止遍历密码")
 
 
 if __name__ == "__main__":
